@@ -29,7 +29,7 @@ namespace {
   std::string userid{"admin"}; // e.g., admin
   std::string pool{"carlos-danger"};
   std::string object{"myobject"};
-  uint64_t n_objects = 100000;
+  uint64_t n_objects = 100;
   uint32_t n_threads = 1;
   bool verbose = false;
 
@@ -213,6 +213,7 @@ int main(int argc, char *argv[])
     ("set", "set keys")
     ("verbose", "verbosity")
     ("threads", po::value<int>(), "number of --set threads (default 1)")
+    ("objects", po::value<int>(), "number of keys to --set (default 100)")
     ;
 
   po::variables_map vm;
@@ -234,6 +235,10 @@ int main(int argc, char *argv[])
 
   if (vm.count("threads")) {
     n_threads = vm["threads"].as<int>();
+  }
+
+  if (vm.count("objects")) {
+    n_objects = vm["objects"].as<int>();
   }
 
   if (set){
