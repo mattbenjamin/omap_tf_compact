@@ -23,16 +23,15 @@
 
 namespace {
 
-  // key count
-  // key template
-
   std::vector<std::thread> thrds;
 
   std::string ceph_conf{"/opt/ceph-rgw/etc/ceph/ceph.conf"};
-  std::string userid{""}; // e.g., admin
+  std::string userid{"admin"}; // e.g., admin
   std::string pool{"carlos-danger"};
   std::string object{"myobject"};
   uint64_t n_objects = 100000;
+  uint32_t n_threads = 1;
+  bool verbose = false;
 
   class RadosCTX
   {
@@ -73,8 +72,9 @@ namespace {
     uint64_t ctr;
     std::string s2 =
       "__multipart_my-multipart-key-1.2~l423STlG8bMdwMMCIW-AWzwCZ8wlX92.meta";
+    uint32_t uniq;
 
-    ObjKeySeq() : ctr() {}
+    ObjKeySeq(uint32_t uniq) : ctr(), uniq(uniq) {}
 
     std::string next_key() {
       std::string key;
@@ -82,6 +82,8 @@ namespace {
       key.append(s1);
       key.append(std::to_string(++ctr));
       key.append(s2);
+      key.append(".");
+      key.append(std::to_string(uniq));
       return key;
     }
   };
@@ -91,8 +93,10 @@ namespace {
   public:
     RadosCTX& rctx;
     librados::IoCtx io_ctx;
+    uint32_t uniq;
 
-    InsertRGWKeys(RadosCTX& _rctx) : rctx(_rctx) {
+    InsertRGWKeys(RadosCTX& _rctx, uint32_t uniq)
+      : rctx(_rctx), uniq(uniq) {
       int ret = rctx.rados.ioctx_create(pool.c_str(), io_ctx);
       if (ret < 0) {
 	std::cout << "rados_ioctx_create failed " << ret << std::endl;
@@ -105,7 +109,7 @@ namespace {
 
     void operator()()
     {
-      ObjKeySeq seq;
+      ObjKeySeq seq(uniq);
       std::string val{"now is the time for all good beings"};
       ceph::buffer::list bl;
       bl.append(val);
@@ -116,7 +120,9 @@ namespace {
 	  std::map<std::string, ceph::buffer::list>::value_type(key, bl));
 	int ret = io_ctx.omap_set(object, kmap);
 	if (ret >= 0) {
-	  std::cout << "inserted: key " << key <<std::endl;
+	  if (verbose) {
+	    std::cout << "inserted: key " << key <<std::endl;
+	  }
 	}
       }
     }
@@ -198,12 +204,15 @@ namespace {
 int main(int argc, char *argv[])
 {
   namespace po = boost::program_options;
+  bool set = false;
 
   po::options_description desc("Allowed options");
   desc.add_options()
     ("get", "get existing keys")
     ("clear", "clear keys")
     ("set", "set keys")
+    ("verbose", "verbosity")
+    ("threads", po::value<int>(), "number of --set threads (default 1)")
     ;
 
   po::variables_map vm;
@@ -215,8 +224,22 @@ int main(int argc, char *argv[])
     thrds.push_back(std::thread(ReadRGWKeys(rctx)));
   } else if (vm.count("clear")) {
     thrds.push_back(std::thread(ClearRGWKeys(rctx)));
-  } else{
-    thrds.push_back(std::thread(InsertRGWKeys(rctx)));
+  } else if (vm.count("set")) {
+    set = true;
+  }
+
+  if (vm.count("verbose")) {
+    verbose = true;
+  }
+
+  if (vm.count("threads")) {
+    n_threads = vm["threads"].as<int>();
+  }
+
+  if (set){
+    for (int ix = 0; ix < n_threads; ++ix) {
+      thrds.push_back(std::thread(InsertRGWKeys(rctx, ix+1)));
+    }
   }
 
   for (auto& thrd : thrds) {
