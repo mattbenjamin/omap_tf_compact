@@ -28,8 +28,8 @@ namespace {
   std::string ceph_conf{"/opt/ceph-rgw/etc/ceph/ceph.conf"};
   std::string userid{"admin"}; // e.g., admin
   std::string pool{"carlos-danger"};
-  std::string object{"myobject"};
-  uint64_t n_objects = 100;
+  std::string default_object{"myobject"};
+  uint64_t n_keys = 100;
   uint32_t n_threads = 1;
   bool verbose = false;
 
@@ -99,10 +99,11 @@ namespace {
   public:
     RadosCTX& rctx;
     librados::IoCtx io_ctx;
+    std::string obj_name;
     uint32_t uniq;
 
-    InsertRGWKeys(RadosCTX& _rctx, uint32_t uniq)
-      : rctx(_rctx), uniq(uniq) {
+    InsertRGWKeys(RadosCTX& _rctx, std::string _obj_name, uint32_t _uniq)
+      : rctx(_rctx), obj_name(_obj_name), uniq(_uniq) {
       int ret = rctx.rados.ioctx_create(pool.c_str(), io_ctx);
       if (ret < 0) {
 	std::cout << "rados_ioctx_create failed " << ret << std::endl;
@@ -110,7 +111,7 @@ namespace {
       ceph::buffer::list bl;
       bl.push_back(
 	ceph::buffer::create_static(7, const_cast<char*>("<nihil>")));
-      ret = io_ctx.write_full(object, bl);
+      ret = io_ctx.write_full(obj_name, bl);
     }
 
     void operator()()
@@ -119,12 +120,12 @@ namespace {
       std::string val{"now is the time for all good beings"};
       ceph::buffer::list bl;
       bl.append(val);
-      for(int i = 0; i < n_objects; i++) {
+      for(int i = 0; i < n_keys; i++) {
 	std::string key = seq.next_key();
 	std::map<std::string, ceph::buffer::list> kmap;
 	kmap.insert(
 	  std::map<std::string, ceph::buffer::list>::value_type(key, bl));
-	int ret = io_ctx.omap_set(object, kmap);
+	int ret = io_ctx.omap_set(obj_name, kmap);
 	if (ret >= 0) {
 	  if (verbose) {
 	    std::cout << "inserted: key " << key <<std::endl;
@@ -142,9 +143,11 @@ namespace {
   public:
     RadosCTX& rctx;
     librados::IoCtx io_ctx;
+    std::string obj_name;
     uint64_t nread;
 
-    ReadRGWKeys(RadosCTX& _rctx) : rctx(_rctx), nread(0) {
+    ReadRGWKeys(RadosCTX& _rctx, std::string _obj_name)
+      : rctx(_rctx), obj_name(_obj_name), nread(0) {
       int ret = rctx.rados.ioctx_create(pool.c_str(), io_ctx);
       if (ret < 0) {
 	std::cout << "rados_ioctx_create failed " << ret << std::endl;
@@ -152,7 +155,7 @@ namespace {
       ceph::buffer::list bl;
       bl.push_back(
 	ceph::buffer::create_static(7, const_cast<char*>("<nihil>")));
-      ret = io_ctx.write_full(object, bl);
+      ret = io_ctx.write_full(obj_name, bl);
     }
 
     void operator()()
@@ -165,7 +168,7 @@ namespace {
       do {
 	keys.clear();
 	rmarker = marker;
-	int ret = io_ctx.omap_get_keys2(object, rmarker, max, &keys, &more);
+	int ret = io_ctx.omap_get_keys2(obj_name, rmarker, max, &keys, &more);
 	for (auto& k : keys) {
 	  std::cout << "\tkey: " << k << std::endl;
 	  rmarker = k;
@@ -184,8 +187,10 @@ namespace {
   public:
     RadosCTX& rctx;
     librados::IoCtx io_ctx;
+    std::string obj_name;
 
-    ClearRGWKeys(RadosCTX& _rctx) : rctx(_rctx) {
+    ClearRGWKeys(RadosCTX& _rctx, std::string _obj_name)
+      : rctx(_rctx), obj_name(_obj_name) {
       int ret = rctx.rados.ioctx_create(pool.c_str(), io_ctx);
       if (ret < 0) {
 	std::cout << "rados_ioctx_create failed " << ret << std::endl;
@@ -194,7 +199,7 @@ namespace {
 
     void operator()()
     {
-      int ret = io_ctx.remove(object);
+      int ret = io_ctx.remove(obj_name);
       if (ret < 0) {
 	std::cout << "rados.remove failed " << ret << std::endl;
       }
@@ -211,15 +216,15 @@ void adhoc_driver(Adhoc op) {
 
   switch (op) {
   case Adhoc::OP_GET:
-    thrds.push_back(std::thread(ReadRGWKeys(rctx)));
+    thrds.push_back(std::thread(ReadRGWKeys(rctx, default_object)));
     break;
   case Adhoc::OP_SET:
     for (int ix = 0; ix < n_threads; ++ix) {
-      thrds.push_back(std::thread(InsertRGWKeys(rctx, ix+1))); 
+      thrds.push_back(std::thread(InsertRGWKeys(rctx, default_object, ix+1))); 
     }
     break;
   case Adhoc::OP_CLEAR:
-    thrds.push_back(std::thread(ClearRGWKeys(rctx)));
+    thrds.push_back(std::thread(ClearRGWKeys(rctx, default_object)));
     break;
   default:
     break;
@@ -230,10 +235,44 @@ void adhoc_driver(Adhoc op) {
   }
 }
 
+void player1_driver() {
+
+  RadosCTX rctx;
+  uint64_t o_suffix = 0;
+
+  for (int ix = 0;; ++ix) {
+    std::string obj_name{default_object};
+    obj_name += "_";
+    obj_name += std::to_string(ix);
+
+    std::cout << __func__
+	      << " create " << n_keys << " keys on " << obj_name
+	      << std::endl;
+    
+    // create keys on obj_name in 1 thread
+    thrds.push_back(std::thread(InsertRGWKeys(rctx, obj_name, 1)));
+    for (auto& thrd : thrds) {
+      thrd.join();
+    }
+    thrds.clear();
+
+    std::cout << __func__
+	      << " remove " << obj_name
+	      << std::endl;
+
+    // remove obj_name
+    thrds.push_back(std::thread(ClearRGWKeys(rctx, obj_name)));
+    for (auto& thrd : thrds) {
+      thrd.join();
+    }
+    thrds.clear();
+  } // ix
+}
+
 void usage(char* prog) {
   std::cout << "usage: \n"
 	    << prog << " --get|--set|--clear|--player1 [--verbose]"
-	    << " [objects=<n>] [threads=<n>]"
+	    << " [keys=<n>] [threads=<n>]"
 	    << std::endl;
 }
 
@@ -249,7 +288,7 @@ int main(int argc, char *argv[])
     ("player1", "non-terminating workload intended to force compactions")
     ("verbose", "verbosity")
     ("threads", po::value<int>(), "number of --set threads (default 1)")
-    ("objects", po::value<int>(), "number of keys to --set (default 100)")
+    ("keys", po::value<int>(), "number of keys to --set (default 100)")
     ;
 
   po::variables_map vm;
@@ -264,8 +303,8 @@ int main(int argc, char *argv[])
     n_threads = vm["threads"].as<int>();
   }
 
-  if (vm.count("objects")) {
-    n_objects = vm["objects"].as<int>();
+  if (vm.count("keys")) {
+    n_keys = vm["keys"].as<int>();
   }
 
   if (vm.count("get")) {
@@ -280,7 +319,7 @@ int main(int argc, char *argv[])
   }
 
   if (vm.count("player1")) {
-    // pass
+    player1_driver();
     goto out;
   }
 
