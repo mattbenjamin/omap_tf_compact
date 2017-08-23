@@ -200,11 +200,19 @@ namespace {
 
 } /* namespace */
 
+void usage(char* prog) {
+  std::cout << "usage: \n"
+	    << prog << " --get|--set|--clear [--verbose] [objects=<n>]"
+	    << " [threads=<n>]" << std::endl;
+}
 
 int main(int argc, char *argv[])
 {
   namespace po = boost::program_options;
+
+  bool get = false;
   bool set = false;
+  bool clear = false;
 
   po::options_description desc("Allowed options");
   desc.add_options()
@@ -245,6 +253,10 @@ int main(int argc, char *argv[])
     for (int ix = 0; ix < n_threads; ++ix) {
       thrds.push_back(std::thread(InsertRGWKeys(rctx, ix+1)));
     }
+  }
+
+  if (! (set||get||clear)) {
+    usage(argv[0]);
   }
 
   for (auto& thrd : thrds) {
