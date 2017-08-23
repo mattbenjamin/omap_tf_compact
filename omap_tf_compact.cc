@@ -24,7 +24,7 @@
 namespace {
 
   std::vector<std::thread> thrds;
-
+  
   std::string ceph_conf{"/opt/ceph-rgw/etc/ceph/ceph.conf"};
   std::string userid{"admin"}; // e.g., admin
   std::string pool{"carlos-danger"};
@@ -32,6 +32,12 @@ namespace {
   uint64_t n_objects = 100;
   uint32_t n_threads = 1;
   bool verbose = false;
+
+  enum class Adhoc : uint16_t {
+    OP_GET = 0,
+    OP_SET,
+    OP_CLEAR
+  };
 
   class RadosCTX
   {
@@ -200,25 +206,47 @@ namespace {
 
 } /* namespace */
 
+void adhoc_driver(Adhoc op) {
+  RadosCTX rctx;
+
+  switch (op) {
+  case Adhoc::OP_GET:
+    thrds.push_back(std::thread(ReadRGWKeys(rctx)));
+    break;
+  case Adhoc::OP_SET:
+    for (int ix = 0; ix < n_threads; ++ix) {
+      thrds.push_back(std::thread(InsertRGWKeys(rctx, ix+1))); 
+    }
+    break;
+  case Adhoc::OP_CLEAR:
+    thrds.push_back(std::thread(ClearRGWKeys(rctx)));
+    break;
+  default:
+    break;
+  };
+
+  for (auto& thrd : thrds) {
+    thrd.join();
+  }
+}
+
 void usage(char* prog) {
   std::cout << "usage: \n"
-	    << prog << " --get|--set|--clear [--verbose] [objects=<n>]"
-	    << " [threads=<n>]" << std::endl;
+	    << prog << " --get|--set|--clear|--player1 [--verbose]"
+	    << " [objects=<n>] [threads=<n>]"
+	    << std::endl;
 }
 
 int main(int argc, char *argv[])
 {
   namespace po = boost::program_options;
 
-  bool get = false;
-  bool set = false;
-  bool clear = false;
-
   po::options_description desc("Allowed options");
   desc.add_options()
     ("get", "get existing keys")
     ("clear", "clear keys")
     ("set", "set keys")
+    ("player1", "non-terminating workload intended to force compactions")
     ("verbose", "verbosity")
     ("threads", po::value<int>(), "number of --set threads (default 1)")
     ("objects", po::value<int>(), "number of keys to --set (default 100)")
@@ -227,15 +255,6 @@ int main(int argc, char *argv[])
   po::variables_map vm;
   po::store(po::parse_command_line(argc, argv, desc), vm);
   po::notify(vm);
-
-  RadosCTX rctx;
-  if (vm.count("get")) {
-    thrds.push_back(std::thread(ReadRGWKeys(rctx)));
-  } else if (vm.count("clear")) {
-    thrds.push_back(std::thread(ClearRGWKeys(rctx)));
-  } else if (vm.count("set")) {
-    set = true;
-  }
 
   if (vm.count("verbose")) {
     verbose = true;
@@ -249,19 +268,24 @@ int main(int argc, char *argv[])
     n_objects = vm["objects"].as<int>();
   }
 
-  if (set){
-    for (int ix = 0; ix < n_threads; ++ix) {
-      thrds.push_back(std::thread(InsertRGWKeys(rctx, ix+1)));
-    }
+  if (vm.count("get")) {
+    adhoc_driver(Adhoc::OP_GET);
+    goto out;
+  } else if (vm.count("clear")) {
+    adhoc_driver(Adhoc::OP_CLEAR);
+    goto out;
+  } else if (vm.count("set")) {
+    adhoc_driver(Adhoc::OP_SET);
+    goto out;
   }
 
-  if (! (set||get||clear)) {
-    usage(argv[0]);
+  if (vm.count("player1")) {
+    // pass
+    goto out;
   }
 
-  for (auto& thrd : thrds) {
-    thrd.join();
-  }
+  usage(argv[0]);
 
+out:
   return 0;
 }
