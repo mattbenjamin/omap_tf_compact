@@ -28,7 +28,7 @@ namespace {
   
   std::string ceph_conf{"/etc/ceph/ceph.conf"};
   std::string userid{"admin"}; // e.g., admin
-  std::string pool{"carlos-danger"};
+  std::string pool{"mypool"};
   std::string default_object{"myobject"};
   uint64_t n_keys = 100;
   uint32_t n_threads = 1;
@@ -304,6 +304,7 @@ int main(int argc, char *argv[])
     ("keys", po::value<int>(), "number of keys to --set (default 100)")
     ("valsize", po::value<int>(), "size of omap values to --set (default 200)")
     ("conf", po::value<std::string>(), "path to ceph.conf")
+    ("pool", po::value<std::string>(), "RADOS pool")
     ;
 
   po::variables_map vm;
@@ -313,7 +314,11 @@ int main(int argc, char *argv[])
   if (vm.count("conf")) {
     ceph_conf = vm["conf"].as<std::string>();
   }
-  
+
+  if (vm.count("pool")) {
+    pool = vm["pool"].as<std::string>();
+  }
+
   if (vm.count("verbose")) {
     verbose = true;
   }
