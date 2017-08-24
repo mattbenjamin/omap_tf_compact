@@ -31,6 +31,7 @@ namespace {
   std::string pool{"mypool"};
   std::string default_object{"myobject"};
   uint64_t n_keys = 100;
+  uint64_t n_objects = 100; // kali
   uint32_t n_threads = 1;
   uint32_t val_size = 200;
   bool verbose = false;
@@ -250,6 +251,9 @@ void adhoc_driver(Adhoc op) {
 
 void player1_driver() {
 
+  /* workload that creates an object, adds nkeys keys w/val of
+   * val_size, then deletes the object--repeats indefinitely */
+
   RadosCTX rctx;
   uint64_t o_suffix = 0;
 
@@ -261,7 +265,7 @@ void player1_driver() {
     std::cout << __func__
 	      << " create " << n_keys << " keys on " << obj_name
 	      << std::endl;
-    
+
     // create keys on obj_name in 1 thread
     thrds.push_back(std::thread(InsertRGWKeys(rctx, obj_name, 1)));
     for (auto& thrd : thrds) {
@@ -282,9 +286,58 @@ void player1_driver() {
   } // ix
 }
 
+void kali_driver() {
+
+  /* workload that creates and stores nkeys key-val pairs on a
+   * sequence of n_objects, then removes each object thus created.
+   * repeats indefinitely. */
+
+  RadosCTX rctx;
+  uint64_t o_suffix = 0;
+
+  for (int ix = 0;; ++ix) {
+
+    // create cycle
+    for (int c_ix = 0; c_ix < n_objects; ++c_ix) {
+      std::string obj_name{default_object};
+      obj_name += "_";
+      obj_name += std::to_string(c_ix);
+
+      std::cout << __func__
+		<< " create " << n_keys << " keys on " << obj_name
+		<< std::endl;
+
+      // create keys on obj_name in 1 thread
+      thrds.push_back(std::thread(InsertRGWKeys(rctx, obj_name, 1)));
+      for (auto& thrd : thrds) {
+	thrd.join();
+      }
+      thrds.clear();
+    } // c_ix
+
+    // remove cycle
+    for (int rm_ix = 0; rm_ix < n_objects; ++rm_ix) {
+      std::string obj_name{default_object};
+      obj_name += "_";
+      obj_name += std::to_string(rm_ix);
+
+      std::cout << __func__
+		<< " remove " << obj_name
+		<< std::endl;
+
+      // remove obj_name
+      thrds.push_back(std::thread(ClearRGWKeys(rctx, obj_name)));
+      for (auto& thrd : thrds) {
+	thrd.join();
+      }
+      thrds.clear();
+    } // rm_ix
+  } // ix
+}
+
 void usage(char* prog) {
   std::cout << "usage: \n"
-	    << prog << " --get|--set|--clear|--player1 [--verbose]"
+	    << prog << " --get|--set|--clear|--player1|--kali [--verbose]"
 	    << " [keys=<n>] [threads=<n>]"
 	    << std::endl;
 }
@@ -299,10 +352,12 @@ int main(int argc, char *argv[])
     ("clear", "clear keys")
     ("set", "set keys")
     ("player1", "non-terminating workload intended to force compactions")
+    ("kali", "non-terminating workload intended to force compactions")
     ("verbose", "verbosity")
     ("threads", po::value<int>(), "number of --set threads (default 1)")
     ("keys", po::value<int>(), "number of keys to --set (default 100)")
-    ("valsize", po::value<int>(), "size of omap values to --set (default 200)")
+    ("objects", po::value<int>(), "number of objects to create (kali, def 100)")
+    ("valsize", po::value<int>(), "size of omap values to --set (def 200)")
     ("conf", po::value<std::string>(), "path to ceph.conf")
     ("pool", po::value<std::string>(), "RADOS pool")
     ;
@@ -331,6 +386,10 @@ int main(int argc, char *argv[])
     n_keys = vm["keys"].as<int>();
   }
 
+  if (vm.count("objects")) {
+    n_objects = vm["objects"].as<int>();
+  }
+
   if (vm.count("valsize")) {
     val_size = vm["valsize"].as<int>();
   }
@@ -348,6 +407,11 @@ int main(int argc, char *argv[])
 
   if (vm.count("player1")) {
     player1_driver();
+    goto out;
+  }
+
+  if (vm.count("kali")) {
+    kali_driver();
     goto out;
   }
 
