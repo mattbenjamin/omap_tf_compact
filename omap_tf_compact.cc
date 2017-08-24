@@ -20,12 +20,13 @@
 #include <iostream>
 #include <boost/program_options.hpp>
 #include <rados/librados.hpp>
+#include <chrono>
 
 namespace {
 
   std::vector<std::thread> thrds;
   
-  std::string ceph_conf{"/opt/ceph-rgw/etc/ceph/ceph.conf"};
+  std::string ceph_conf{"/etc/ceph/ceph.conf"};
   std::string userid{"admin"}; // e.g., admin
   std::string pool{"carlos-danger"};
   std::string default_object{"myobject"};
@@ -289,12 +290,17 @@ int main(int argc, char *argv[])
     ("verbose", "verbosity")
     ("threads", po::value<int>(), "number of --set threads (default 1)")
     ("keys", po::value<int>(), "number of keys to --set (default 100)")
+    ("conf", po::value<std::string>(), "path to ceph.conf")
     ;
 
   po::variables_map vm;
   po::store(po::parse_command_line(argc, argv, desc), vm);
   po::notify(vm);
 
+  if (vm.count("conf")) {
+    ceph_conf = vm["conf"].as<std::string>();
+  }
+  
   if (vm.count("verbose")) {
     verbose = true;
   }
