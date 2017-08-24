@@ -84,7 +84,7 @@ namespace {
     }
   };
 
-  class ObjKeySeq
+  class OmapKeySeq
   {
   public:
     std::string s1 = "08b911c5-a313-4c06-a46d-451d064c6570.4100.";
@@ -93,7 +93,7 @@ namespace {
       "__multipart_my-multipart-key-1.2~l423STlG8bMdwMMCIW-AWzwCZ8wlX92.meta";
     uint32_t uniq;
 
-    ObjKeySeq(uint32_t uniq) : ctr(), uniq(uniq) {}
+    OmapKeySeq(uint32_t uniq) : ctr(), uniq(uniq) {}
 
     std::string next_key() {
       std::string key;
@@ -129,7 +129,7 @@ namespace {
 
     void operator()()
     {
-      ObjKeySeq seq(uniq);
+      OmapKeySeq seq(uniq);
       OmapVal val(val_size);
       ceph::buffer::list bl;
       bl.append(val.data);
