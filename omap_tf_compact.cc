@@ -32,6 +32,7 @@ namespace {
   std::string default_object{"myobject"};
   uint64_t n_keys = 100;
   uint32_t n_threads = 1;
+  uint32_t val_size = 200;
   bool verbose = false;
 
   enum class Adhoc : uint16_t {
@@ -71,6 +72,17 @@ namespace {
       rados.shutdown();
     }
   }; /* RadosCTX */
+
+
+  class OmapVal
+  {
+  public:
+    std::string data;
+    OmapVal(uint32_t size) {
+      std::string d(size, 'd');
+      data = std::move(d);
+    }
+  };
 
   class ObjKeySeq
   {
@@ -118,9 +130,9 @@ namespace {
     void operator()()
     {
       ObjKeySeq seq(uniq);
-      std::string val{"now is the time for all good beings"};
+      OmapVal val(val_size);
       ceph::buffer::list bl;
-      bl.append(val);
+      bl.append(val.data);
       for(int i = 0; i < n_keys; i++) {
 	std::string key = seq.next_key();
 	std::map<std::string, ceph::buffer::list> kmap;
@@ -290,6 +302,7 @@ int main(int argc, char *argv[])
     ("verbose", "verbosity")
     ("threads", po::value<int>(), "number of --set threads (default 1)")
     ("keys", po::value<int>(), "number of keys to --set (default 100)")
+    ("valsize", po::value<int>(), "size of omap values to --set (default 200)")
     ("conf", po::value<std::string>(), "path to ceph.conf")
     ;
 
@@ -311,6 +324,10 @@ int main(int argc, char *argv[])
 
   if (vm.count("keys")) {
     n_keys = vm["keys"].as<int>();
+  }
+
+  if (vm.count("valsize")) {
+    val_size = vm["valsize"].as<int>();
   }
 
   if (vm.count("get")) {
