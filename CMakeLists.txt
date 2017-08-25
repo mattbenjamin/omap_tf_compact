@@ -24,5 +24,6 @@ endif()
 target_link_libraries(omap_tf_compact LINK_PUBLIC
   ${RADOS_LIBRARIES}
   boost_program_options
+  boost_date_time
   pthread
   )

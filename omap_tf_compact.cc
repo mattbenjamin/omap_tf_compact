@@ -20,7 +20,7 @@
 #include <iostream>
 #include <boost/program_options.hpp>
 #include <rados/librados.hpp>
-#include <chrono>
+#include <boost/date_time.hpp> // XXX
 
 namespace {
 
@@ -256,13 +256,16 @@ void player1_driver() {
 
   RadosCTX rctx;
   uint64_t o_suffix = 0;
+  boost::posix_time::ptime now;
 
   for (int ix = 0;; ++ix) {
     std::string obj_name{default_object};
     obj_name += "_";
     obj_name += std::to_string(ix);
+    now = boost::posix_time::microsec_clock::universal_time();
 
     std::cout << __func__
+	      << " " << boost::posix_time::to_simple_string(now)
 	      << " create " << n_keys << " keys on " << obj_name
 	      << std::endl;
 
@@ -294,6 +297,7 @@ void kali_driver() {
 
   RadosCTX rctx;
   uint64_t o_suffix = 0;
+  boost::posix_time::ptime now;
 
   for (int ix = 0;; ++ix) {
 
@@ -302,8 +306,10 @@ void kali_driver() {
       std::string obj_name{default_object};
       obj_name += "_";
       obj_name += std::to_string(c_ix);
+      now = boost::posix_time::microsec_clock::universal_time();
 
       std::cout << __func__
+		<< " " << boost::posix_time::to_simple_string(now)
 		<< " create " << n_keys << " keys on " << obj_name
 		<< std::endl;
 
@@ -320,8 +326,10 @@ void kali_driver() {
       std::string obj_name{default_object};
       obj_name += "_";
       obj_name += std::to_string(rm_ix);
+      now = boost::posix_time::microsec_clock::universal_time();
 
       std::cout << __func__
+		<< " " << boost::posix_time::to_simple_string(now)
 		<< " remove " << obj_name
 		<< std::endl;
 
